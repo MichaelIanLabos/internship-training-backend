@@ -126,6 +126,7 @@ REST_FRAMEWORK = {
         'rest_framework.parsers.JSONParser',
     ],
     'EXCEPTION_HANDLER': 'apps.core.exceptions.custom_exception_handler',
+    'TEST_REQUEST_DEFAULT_FORMAT': 'json',
 }
 
 # Simple JWT
