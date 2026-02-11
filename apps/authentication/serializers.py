@@ -14,9 +14,7 @@ class UserSerializer(serializers.ModelSerializer):
     """
     class Meta:
         model = User
-        # TODO: Add fields here
-        # Hint: id, email, first_name, last_name, date_joined
-        fields = '__all__'  # REPLACE THIS - be specific about fields
+        fields = ('id', 'email', 'first_name', 'last_name', 'date_joined')
         read_only_fields = ('id', 'date_joined')
 
 
@@ -30,33 +28,21 @@ class RegisterSerializer(serializers.ModelSerializer):
     3. Implement create() method to create user with hashed password
     4. Consider: What validations are needed? Email format? Password strength?
     """
-    # TODO: Add password fields here
-    # password = serializers.CharField(...)
-    # password_confirm = serializers.CharField(...)
+    password = serializers.CharField(write_only=True)
+    password_confirm = serializers.CharField(write_only=True)
 
     class Meta:
         model = User
-        fields = ('email', 'first_name', 'last_name', 'password')  # TODO: Add password_confirm
+        fields = ('email', 'first_name', 'last_name', 'password', 'password_confirm')
 
     def validate(self, attrs):
-        """
-        TODO: Implement password matching validation
-        Hint: Check if password == password_confirm
-        Raise serializers.ValidationError if they don't match
-        """
-        # Your code here
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError({'password': 'Passwords do not match.'})
         return attrs
 
     def create(self, validated_data):
-        """
-        TODO: Implement user creation
-        Hint:
-        - Remove password_confirm from validated_data
-        - Use User.objects.create_user() to properly hash the password
-        - Return the created user
-        """
-        # Your code here
-        pass
+        validated_data.pop('password_confirm')
+        return User.objects.create_user(**validated_data)
 
 
 class LoginSerializer(serializers.Serializer):

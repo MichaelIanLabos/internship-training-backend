@@ -43,24 +43,19 @@ class RegisterView(APIView):
         "message": "User registered successfully. Please login."
     }
     """
-    permission_classes = []  # TODO: Set to [AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
-        """
-        TODO: Implement user registration
-        Steps:
-        1. Create serializer with request.data
-        2. Check if data is valid (use raise_exception=True)
-        3. Save the user
-        4. Return Response with user data and success message
-
-        Hints:
-        - Use serializer.is_valid(raise_exception=True)
-        - Use UserSerializer to format the response
-        - Return status.HTTP_201_CREATED
-        """
-        # Your code here
-        pass
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'message': 'User registered successfully. Please login.',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class LoginView(APIView):
