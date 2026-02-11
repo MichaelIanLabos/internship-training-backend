@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth import authenticate  # noqa: F401
+from django.contrib.auth.password_validation import validate_password
 from .models import User
 
 
@@ -38,6 +39,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         if attrs['password'] != attrs['password_confirm']:
             raise serializers.ValidationError({'password': 'Passwords do not match.'})
+        validate_password(attrs['password'])
         return attrs
 
     def create(self, validated_data):
