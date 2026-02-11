@@ -96,22 +96,20 @@ class LoginView(APIView):
     access_token = str(refresh.access_token)
     refresh_token = str(refresh)
     """
-    permission_classes = []  # TODO: Set to [AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
-        """
-        TODO: Implement user login with JWT
-        Steps:
-        1. Validate credentials with LoginSerializer
-        2. Get the authenticated user from serializer.validated_data
-        3. Generate JWT tokens using RefreshToken.for_user(user)
-        4. Return user data + tokens
-
-        Resources:
-        - Simple JWT docs: https://django-rest-framework-simplejwt.readthedocs.io/
-        """
-        # Your code here
-        pass
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'user': UserSerializer(user).data,
+            'tokens': {
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+            },
+        })
 
 
 class MeView(APIView):
