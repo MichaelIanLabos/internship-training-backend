@@ -139,17 +139,7 @@ class MeView(APIView):
     Note: This endpoint tests if JWT authentication is working!
     The user must send a valid access token in the Authorization header.
     """
-    permission_classes = []  # TODO: Set to [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        TODO: Implement get current user endpoint
-        Steps:
-        1. Get user from request.user (DRF provides this automatically)
-        2. Serialize with UserSerializer
-        3. Return the data
-
-        Hint: request.user is automatically populated by JWT authentication
-        """
-        # Your code here
-        pass
+        return Response(UserSerializer(request.user).data)
