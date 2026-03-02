@@ -1,0 +1,144 @@
+EMPLOYEE BASIC PROFILE CRUD 2-WEEK SPRINT PLAN (INTERN EDITION)
+
+Project Context: You are building a multi-tenant HRIS system. Each
+logged-in user belongs to an Employer (tenant). All employee records
+must be scoped to user_id from request.user.
+
+===================================================== SPRINT OVERVIEW (2
+WEEKS) =====================================================
+
+Week 1: Backend Development + Architecture Week 2: Frontend
+Integration + Testing + Review
+
+===================================================== WEEK 1 – BACKEND
+SPRINT =====================================================
+
+DAY 1 – REQUIREMENTS & DOMAIN UNDERSTANDING
+
+Deliverables: - Functional requirements document - Non-functional
+requirements - Edge case list - Validation rules
+
+Must Define: - Required fields - Email uniqueness per employer -
+Employee code auto-generation logic (EMP-0001 format) - Soft delete
+behavior - Pagination rules
+
+------------------------------------------------------------------------
+
+DAY 2 – DATABASE DESIGN
+
+Tasks: - Design Employee ERD - Define relationships - Implement Django
+model
+
+Fields: - employer (FK) - employee_code - first_name - last_name -
+middle_name (optional) - email - phone_number (optional) - hire_date -
+employment_status (active/inactive) - is_deleted (boolean)
+
+Deliverables: - ERD diagram - Model implementation - Migration file
+
+------------------------------------------------------------------------
+
+DAY 3 – SERIALIZERS
+
+Tasks: - Create EmployeeCreateUpdateSerializer - Create
+EmployeeTableViewSerializer - Create EmployeeRetrieveSerializer
+
+Requirements: - Auto-generate employee_code - Inject user_id from
+request.user - Exclude employer and is_deleted from exposed fields
+
+Deliverables: - Serializer files - Manual test using Postman
+
+------------------------------------------------------------------------
+
+DAY 4 – CREATE & RETRIEVE ENDPOINTS
+
+Tasks: - Implement POST (create employee) - Implement GET (list
+employees) - Add employer filtering - Add email uniqueness validation
+
+Features: - Search by name or email - Exclude soft-deleted records
+
+Deliverables: - Working create endpoint - Working list endpoint
+
+------------------------------------------------------------------------
+
+DAY 5 – UPDATE, DELETE, PAGINATION
+
+Tasks: - Implement PATCH endpoint - Implement soft delete (bulk
+delete) - Implement pagination - Add validation for update (email
+uniqueness excluding self)
+
+Deliverables: - Fully working CRUD backend - Postman collection -
+Backend Pull Request
+
+===================================================== WEEK 2 –
+FRONTEND + INTEGRATION
+=====================================================
+
+DAY 6 – API CONTRACT ALIGNMENT
+
+Tasks: - Review API request/response structure - Create shared API
+contract documentation - Align frontend and backend payload formats
+
+Deliverables: - API documentation (Markdown) - Updated endpoints if
+needed
+
+------------------------------------------------------------------------
+
+DAY 7 – EMPLOYEE LIST PAGE
+
+Tasks: - Create Employee List Page - Integrate TanStack Query for
+fetching - Display: - Employee Code - Name - Email - Status - Created
+Date
+
+Deliverables: - Functional employee table UI
+
+------------------------------------------------------------------------
+
+DAY 8 – SEARCH & PAGINATION
+
+Tasks: - Add search input - Connect to backend search query param -
+Implement pagination controls
+
+Deliverables: - Working search - Working pagination
+
+------------------------------------------------------------------------
+
+DAY 9 – CREATE & EDIT MODALS
+
+Tasks: - Build Add Employee modal form - Build Edit Employee modal -
+Form validation - API integration
+
+Deliverables: - Functional create/edit UI
+
+------------------------------------------------------------------------
+
+DAY 10 – DELETE + FINAL TESTING
+
+Tasks: - Implement bulk delete - Add delete confirmation modal - Test
+edge cases - Fix bugs - Code cleanup
+
+Deliverables: - Final working module - Demo walkthrough video - Frontend
+Pull Request
+
+===================================================== BONUS TASKS
+(OPTIONAL IF TIME ALLOWS)
+=====================================================
+
+-   Restore employee endpoint
+-   Prevent deleting active employees
+-   Add CSV export
+-   Add permission decorators
+-   Add unit tests
+
+===================================================== EVALUATION
+CRITERIA =====================================================
+
+-   Clean architecture
+-   Multi-tenant safety
+-   Validation correctness
+-   Error handling
+-   Code consistency with Department module
+-   Proper use of pagination
+-   Proper frontend/backend separation
+
+===================================================== END OF DOCUMENT
+=====================================================

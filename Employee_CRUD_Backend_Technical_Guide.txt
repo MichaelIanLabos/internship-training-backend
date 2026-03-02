@@ -1,0 +1,156 @@
+EMPLOYEE CRUD MODULE BACKEND TECHNICAL IMPLEMENTATION GUIDE
+
+===================================================== 1. ARCHITECTURE
+OVERVIEW =====================================================
+
+The system follows a layered backend architecture:
+
+-   Model Layer (Django ORM)
+-   Serializer Layer (Data validation & transformation)
+-   View Layer (API endpoints)
+-   Permission Layer (RBAC decorators)
+-   Utility Layer (API base class, ObjectManager, error handling)
+
+All data must be scoped to: request.user.id
+
+This ensures multi-tenant safety.
+
+===================================================== 2. DATABASE MODEL
+IMPLEMENTATION =====================================================
+
+File: app/models/employee.py
+
+ForeignKey - Must include is_deleted boolean (soft delete) - No hard
+deletes allowed
+
+Important: Add database indexes for: - user_id - email -
+employee_code
+
+Run: python manage.py makemigrations python manage.py migrate
+
+===================================================== 3. EMPLOYEE CODE
+GENERATION STRATEGY
+=====================================================
+
+Format: EMP-0001
+
+Logic: - Filter employees by user_id - Get latest record - Increment
+per employer
+
+IMPORTANT: Do NOT rely on global ID. Generation must be employer-scoped.
+
+Potential Improvement: Use database transaction.atomic() to prevent race
+conditions.
+
+===================================================== 4. SERIALIZER
+IMPLEMENTATION =====================================================
+
+File: app/serializers/employee.py
+
+Create: - EmployeeCreateUpdateSerializer - EmployeeTableViewSerializer -
+EmployeeRetrieveSerializer
+
+Rules: - Exclude employer and is_deleted - Inject user_id in
+create() - Validate email uniqueness in view layer
+
+Optional: Add validate_email() inside serializer for cleaner logic.
+
+===================================================== 5. API VIEW
+STRUCTURE =====================================================
+
+File: app/views/employee.py
+
+Follow same structure as DepartmentAPIView.
+
+Endpoints:
+
+POST /employees/ GET /employees/ PATCH /employees/{id}/ DELETE
+/employees/ GET /employees/{id}/
+
+===================================================== 6. CREATE ENDPOINT
+DETAILS =====================================================
+
+Steps: 1. Extract user_id from request.user 2. Validate email
+uniqueness: Employee.objects.filter( user_id=user_id,
+email__iexact=email, is_deleted=False ) 3. Initialize serializer with
+context={“request”: request} 4. Call is_valid() 5. Save() 6. Return
+success_response()
+
+Return Status: 201
+
+===================================================== 7. LIST ENDPOINT
+DETAILS =====================================================
+
+Filters: - user_id - is_deleted=False
+
+Search: - first_name__icontains - last_name__icontains -
+email__icontains
+
+Pagination: Use generate_pagination() from ObjectManager.
+
+Return: { total_records, total_pages, current_page, records: [] }
+
+===================================================== 8. UPDATE ENDPOINT
+DETAILS =====================================================
+
+Rules: - Must fetch object by user_id - Must exclude current record
+in email uniqueness check
+
+Example:
+
+Employee.objects.filter( user_id=user_id,
+email__iexact=new_email ).exclude(id=employee_id)
+
+Use partial=True in serializer.
+
+===================================================== 9. DELETE ENDPOINT
+(SOFT DELETE) =====================================================
+
+Never call .delete()
+
+Instead: employees.update(is_deleted=True)
+
+===================================================== 11. SECURITY
+REQUIREMENTS =====================================================
+
+MUST: - Always filter by user_id - Never expose other tenant
+records - Never trust request body user_id - Use require_permission
+decorator where applicable
+
+
+===================================================== 12. TESTING
+CHECKLIST =====================================================
+
+Manual Tests:
+
+[ ] Create employee [ ] Duplicate email (same employer) → error [ ]
+Duplicate email (different user) → allowed [ ] Search by name [ ]
+Pagination works [ ] Soft delete hides record [ ] Cannot access employee
+from another employer [ ] Update email to existing email → error
+
+Optional: Add Django unit tests.
+
+===================================================== 13. PERFORMANCE
+CONSIDERATIONS =====================================================
+
+-   Add database indexes
+-   Use select_related() if adding relations later
+-   Avoid loading full queryset before pagination in large datasets
+
+Future Improvement: Switch to database-level pagination instead of
+slicing serialized list.
+
+===================================================== 14. CODE REVIEW
+CHECKLIST =====================================================
+
+-   Clean naming conventions
+-   No duplicate logic
+-   No hard deletes
+-   Multi-tenant safe
+-   Proper error messages
+-   Follows Department module structure
+-   No unused imports
+-   Proper separation of concerns
+
+===================================================== END OF TECHNICAL
+GUIDE =====================================================

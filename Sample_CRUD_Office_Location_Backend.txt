@@ -1,0 +1,231 @@
+SAMPLE CRUD IMPLEMENTATION (REFERENCE ONLY) MODULE: OFFICE LOCATION
+MANAGEMENT
+
+NOTE: This is a SAMPLE implementation to guide structure and
+architecture. Do NOT copy directly. Follow patterns and adapt to your
+assigned module.
+
+===================================================== 1. USE CASE
+=====================================================
+
+Manage company office locations per employer (tenant).
+
+Each employer can: - Create office locations - View office locations -
+Update office locations - Soft delete office locations
+
+All records must be scoped by: request.user.employer_id
+
+===================================================== 2. MODEL
+IMPLEMENTATION =====================================================
+
+File: app/models/office_location.py
+
+from django.db import models from app.models.utils import TimeStampMixin
+
+class OfficeLocation(TimeStampMixin): employer =
+models.ForeignKey(“Employer”, on_delete=models.CASCADE) name =
+models.CharField(max_length=150) address = models.TextField() city =
+models.CharField(max_length=100) country =
+models.CharField(max_length=100) is_active =
+models.BooleanField(default=True) is_deleted =
+models.BooleanField(default=False)
+
+    class Meta:
+        db_table = "office_locations"
+        ordering = ["-id"]
+
+===================================================== 3. SERIALIZERS
+=====================================================
+
+File: app/serializers/office_location.py
+
+from rest_framework import serializers from app.models.office_location
+import OfficeLocation
+
+class OfficeLocationCreateUpdateSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = OfficeLocation
+        exclude = ["employer", "is_deleted"]
+
+    def create(self, validated_data):
+        validated_data["employer_id"] = self.context["request"].user.employer_id
+        return OfficeLocation.objects.create(**validated_data)
+
+class OfficeLocationTableSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = OfficeLocation
+        exclude = ["employer", "is_deleted"]
+
+    def to_representation(self, instance):
+        return {
+            "id": instance.id,
+            "name": instance.name,
+            "city": instance.city,
+            "country": instance.country,
+            "is_active": instance.is_active,
+            "created_at": instance.created_at.isoformat(),
+        }
+
+class OfficeLocationRetrieveSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = OfficeLocation
+        exclude = ["employer", "is_deleted"]
+
+===================================================== 4. API VIEWS
+=====================================================
+
+File: app/views/office_location.py
+
+from django.db.models import Q from app.models.office_location import
+OfficeLocation from app.serializers.office_location import (
+OfficeLocationCreateUpdateSerializer, OfficeLocationTableSerializer,
+OfficeLocationRetrieveSerializer, ) from utils.views.api import API from
+app.mixins.object_manager import ObjectManager from utils.exceptions
+import HumanReadableError
+
+class OfficeLocationAPIView(API, ObjectManager):
+
+    def post(self, request, format=None):
+        try:
+            employer_id = request.user.employer_id
+            payload = request.data
+
+            # Prevent duplicate name per employer
+            if OfficeLocation.objects.filter(
+                employer_id=employer_id,
+                name__iexact=payload.get("name"),
+                is_deleted=False
+            ).exists():
+                self.raise_error("Office location already exists.")
+
+            serializer = OfficeLocationCreateUpdateSerializer(
+                data=payload,
+                context={"request": request}
+            )
+
+            if serializer.is_valid():
+                serializer.save()
+            else:
+                error_details = self.get_error_details(serializer.errors)
+                self.raise_error(message=error_details)
+
+            return self.success_response(
+                {"message": "Office location created successfully."},
+                status=201
+            )
+
+        except Exception as exc:
+            return self.server_error_response(exc)
+
+
+    def get(self, request, format=None):
+        try:
+            employer_id = request.user.employer_id
+            query_params = request.GET.dict()
+
+            filters = Q(employer_id=employer_id, is_deleted=False)
+
+            if query_params.get("search"):
+                search = query_params.get("search")
+                filters &= (
+                    Q(name__icontains=search) |
+                    Q(city__icontains=search) |
+                    Q(country__icontains=search)
+                )
+
+            queryset = OfficeLocation.objects.filter(filters).order_by("-id")
+
+            serializer = OfficeLocationTableSerializer(queryset, many=True)
+            records = serializer.data
+
+            page_size = int(query_params.get("page_size", 10))
+            current_page = int(query_params.get("current_page", 1))
+
+            results = self.generate_pagination(current_page, page_size, records)
+            records = records[results["starting"]:results["ending"]]
+            results["records"] = records
+
+            return self.success_response(results)
+
+        except Exception as exc:
+            return self.server_error_response(exc)
+
+
+    def delete(self, request, format=None):
+        try:
+            employer_id = request.user.employer_id
+            location_ids = request.data.get("location_ids", [])
+
+            if not location_ids:
+                self.raise_error("No location IDs provided.", status=400)
+
+            locations = OfficeLocation.objects.filter(
+                id__in=location_ids,
+                employer_id=employer_id
+            )
+
+            locations.update(is_deleted=True)
+
+            return self.success_response({
+                "message": "Office locations deleted successfully."
+            })
+
+        except Exception as exc:
+            return self.server_error_response(exc)
+
+class OfficeLocationDetailAPIView(API, ObjectManager):
+
+    def get_object(self, employer_id, pk):
+        try:
+            return OfficeLocation.objects.get(
+                employer_id=employer_id,
+                pk=pk,
+                is_deleted=False
+            )
+        except OfficeLocation.DoesNotExist:
+            self.raise_error("Office location not found.", status=404)
+
+
+    def get(self, request, location_id, format=None):
+        employer_id = request.user.employer_id
+        instance = self.get_object(employer_id, location_id)
+        serializer = OfficeLocationRetrieveSerializer(instance)
+        return self.success_response(serializer.data)
+
+
+    def patch(self, request, location_id, format=None):
+        employer_id = request.user.employer_id
+        instance = self.get_object(employer_id, location_id)
+
+        serializer = OfficeLocationCreateUpdateSerializer(
+            instance,
+            data=request.data,
+            partial=True
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+        else:
+            error_details = self.get_error_details(serializer.errors)
+            self.raise_error(message=error_details)
+
+        return self.success_response({
+            "message": "Office location updated successfully."
+        })
+
+===================================================== 5. KEY TAKEAWAYS
+FOR INTERNS =====================================================
+
+-   Always scope by employer_id
+-   Never hard delete records
+-   Validate uniqueness per tenant
+-   Use serializer context for injecting employer_id
+-   Follow API base class patterns
+-   Use ObjectManager pagination utility
+-   Separate list and detail views
+
+This sample exists to demonstrate structure only. Your assigned module
+must follow the same architectural discipline.
