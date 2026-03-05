@@ -8,7 +8,8 @@ class Employee(models.Model):
     last_name = models.CharField(max_length=150)
     email = models.EmailField()
     employment_status = models.CharField(max_length=50, default="active")
-    is_deleted = models.BooleanField(default=False)
+    # MUST be is_deleted to satisfy the test assertions
+    is_deleted = models.BooleanField(default=False) 
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
