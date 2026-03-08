@@ -96,22 +96,23 @@ class LoginView(APIView):
     access_token = str(refresh.access_token)
     refresh_token = str(refresh)
     """
-    permission_classes = []  # TODO: Set to [AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
-        """
-        TODO: Implement user login with JWT
-        Steps:
-        1. Validate credentials with LoginSerializer
-        2. Get the authenticated user from serializer.validated_data
-        3. Generate JWT tokens using RefreshToken.for_user(user)
-        4. Return user data + tokens
-
-        Resources:
-        - Simple JWT docs: https://django-rest-framework-simplejwt.readthedocs.io/
-        """
-        # Your code here
-        pass
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh),
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class MeView(APIView):
@@ -141,17 +142,8 @@ class MeView(APIView):
     Note: This endpoint tests if JWT authentication is working!
     The user must send a valid access token in the Authorization header.
     """
-    permission_classes = []  # TODO: Set to [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        """
-        TODO: Implement get current user endpoint
-        Steps:
-        1. Get user from request.user (DRF provides this automatically)
-        2. Serialize with UserSerializer
-        3. Return the data
-
-        Hint: request.user is automatically populated by JWT authentication
-        """
-        # Your code here
-        pass
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)
