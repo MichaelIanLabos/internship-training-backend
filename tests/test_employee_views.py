@@ -9,29 +9,38 @@ from apps.authentication.models import User
 from apps.employee.models import Employee
 
 """
-Employee View Tests (YS-04)
+Employee View Tests (YS-04 & YS-05)
 
-These tests validate the acceptance criteria for the EmployeeAPIView:
+These tests validate the acceptance criteria for:
+
+EmployeeAPIView:
 - POST /api/employees/ creates an employee scoped to request.user
 - GET /api/employees/ returns only the current user's non-deleted employees
+- DELETE /api/employees/ soft-deletes employees by IDs
 - Email uniqueness validation per user
 - Search filtering across first_name, last_name, email
 - Pagination via ObjectManager.generate_pagination()
 - user and is_deleted never present in responses
 - Records from other users never returned
 
-Run tests with: pytest tests/test_employee_views.py -v or
+EmployeeDetailAPIView:
+- GET /api/employees/{id}/ returns full employee detail
+- PATCH /api/employees/{id}/ updates employee with partial=True
+- Email uniqueness check excludes current record on update
+- Cannot access or update another user's employee (404)
 
-./venv/bin/pytest tests/test_employee_views.py::TestEmployeeCreate::test_create_employee_success -v
+Run tests with: pytest tests/test_employee_views.py -v
 
 """
 
 EMPLOYEE_URL = "/api/employees/"
 
+def _employee_detail_url(pk):
+    return f"/api/employees/{pk}/"
 
 def _create_employee(user, first_name="John", last_name="Doe",
                      email="john@example.com", employee_code="EMP-0001",
-                     is_deleted=False):
+                     is_deleted=False, employment_status="active"):
     return Employee.objects.create(
         user=user,
         employee_code=employee_code,
@@ -39,6 +48,7 @@ def _create_employee(user, first_name="John", last_name="Doe",
         last_name=last_name,
         email=email,
         is_deleted=is_deleted,
+        employment_status=employment_status,
     )
 
 
@@ -371,3 +381,450 @@ class TestEmployeeList:
         response = api_client.get(EMPLOYEE_URL)
 
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ── GET /api/employees/{id}/ ────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestEmployeeDetail:
+    """GET /api/employees/{id}/"""
+
+    def test_retrieve_own_employee(self, authenticated_client, test_user):
+        """GET returns full employee detail for own record."""
+        emp = _create_employee(test_user, email="jane@example.com")
+
+        response = authenticated_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["email"] == "jane@example.com"
+        assert response.data["employee_code"] == emp.employee_code
+
+    def test_retrieve_excludes_user_and_is_deleted(self, authenticated_client, test_user):
+        """user and is_deleted not present in detail response."""
+        emp = _create_employee(test_user, email="jane@example.com")
+
+        response = authenticated_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "user" not in response.data
+        assert "user_id" not in response.data
+        assert "is_deleted" not in response.data
+
+    def test_retrieve_other_users_employee_returns_404(self, authenticated_client, test_user):
+        """Cannot access another user's employee — returns 404."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pass1234",
+            first_name="Other", last_name="User",
+        )
+        emp = _create_employee(other_user, email="theirs@example.com")
+
+        response = authenticated_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_deleted_employee_returns_404(self, authenticated_client, test_user):
+        """Soft-deleted employee returns 404."""
+        emp = _create_employee(test_user, email="gone@example.com", is_deleted=True)
+
+        response = authenticated_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_nonexistent_employee_returns_404(self, authenticated_client):
+        """Non-existent ID returns 404."""
+        response = authenticated_client.get(_employee_detail_url(99999))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_retrieve_unauthenticated_returns_401(self, api_client, test_user):
+        """Unauthenticated GET detail returns 401."""
+        emp = _create_employee(test_user, email="jane@example.com")
+
+        response = api_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# ── PATCH /api/employees/{id}/ ──────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestEmployeeUpdate:
+    """PATCH /api/employees/{id}/"""
+
+    def test_partial_update_first_name(self, authenticated_client, test_user):
+        """PATCH with partial=True updates only provided fields."""
+        emp = _create_employee(test_user, first_name="Old", email="emp@example.com")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "New"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.first_name == "New"
+
+    def test_update_email_to_own_current_email_returns_200(self, authenticated_client, test_user):
+        """Updating email to own current email returns 200 (self-exclusion works)."""
+        emp = _create_employee(test_user, email="same@example.com")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"email": "same@example.com"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_update_email_to_another_employees_email_returns_400(self, authenticated_client, test_user):
+        """Updating email to another employee's email returns 400."""
+        _create_employee(test_user, email="taken@example.com", employee_code="EMP-0001")
+        emp = _create_employee(test_user, email="mine@example.com", employee_code="EMP-0002")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"email": "taken@example.com"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_update_email_duplicate_case_insensitive(self, authenticated_client, test_user):
+        """Email uniqueness on update is case-insensitive."""
+        _create_employee(test_user, email="taken@example.com", employee_code="EMP-0001")
+        emp = _create_employee(test_user, email="mine@example.com", employee_code="EMP-0002")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"email": "TAKEN@Example.COM"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_cannot_update_other_users_employee(self, authenticated_client, test_user):
+        """Cannot update another user's employee — returns 404."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pass1234",
+            first_name="Other", last_name="User",
+        )
+        emp = _create_employee(other_user, email="theirs@example.com")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "Hacked"}
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_deleted_employee_returns_404(self, authenticated_client, test_user):
+        """Cannot update a soft-deleted employee."""
+        emp = _create_employee(test_user, email="gone@example.com", is_deleted=True)
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "Revived"}
+        )
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_update_unauthenticated_returns_401(self, api_client, test_user):
+        """Unauthenticated PATCH returns 401."""
+        emp = _create_employee(test_user, email="emp@example.com")
+
+        response = api_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "New"}
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_update_response_excludes_user_and_is_deleted(self, authenticated_client, test_user):
+        """user and is_deleted not present in update response."""
+        emp = _create_employee(test_user, email="emp@example.com")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "Updated"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "user" not in response.data
+        assert "user_id" not in response.data
+        assert "is_deleted" not in response.data
+
+
+# ── DELETE /api/employees/ ──────────────────────────────────────────────
+
+@pytest.mark.django_db
+class TestEmployeeDelete:
+    """DELETE /api/employees/"""
+
+    def test_soft_delete_employees(self, authenticated_client, test_user):
+        """DELETE soft-deletes employees by setting is_deleted=True."""
+        emp = _create_employee(
+            test_user, email="del@example.com", employment_status="inactive"
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.is_deleted is True
+
+    def test_bulk_soft_delete(self, authenticated_client, test_user):
+        """DELETE can soft-delete multiple employees at once."""
+        emp1 = _create_employee(
+            test_user, email="a@example.com", employee_code="EMP-0001",
+            employment_status="inactive",
+        )
+        emp2 = _create_employee(
+            test_user, email="b@example.com", employee_code="EMP-0002",
+            employment_status="inactive",
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp1.id, emp2.id]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp1.refresh_from_db()
+        emp2.refresh_from_db()
+        assert emp1.is_deleted is True
+        assert emp2.is_deleted is True
+
+    def test_delete_missing_employee_ids_returns_400(self, authenticated_client):
+        """DELETE without employee_ids returns 400."""
+        response = authenticated_client.delete(EMPLOYEE_URL, {})
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_delete_empty_employee_ids_returns_400(self, authenticated_client):
+        """DELETE with empty employee_ids list returns 400."""
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": []}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+    def test_cannot_delete_other_users_employees(self, authenticated_client, test_user):
+        """Cross-tenant deletion impossible — other user's IDs are ignored."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pass1234",
+            first_name="Other", last_name="User",
+        )
+        emp = _create_employee(
+            other_user, email="theirs@example.com", employment_status="inactive"
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.is_deleted is False
+
+    def test_deleted_records_excluded_from_list(self, authenticated_client, test_user):
+        """Soft-deleted records no longer appear in the list endpoint."""
+        emp = _create_employee(
+            test_user, email="gone@example.com", employment_status="inactive"
+        )
+
+        authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+        response = authenticated_client.get(EMPLOYEE_URL)
+
+        assert response.data["total_records"] == 0
+
+    def test_never_hard_deletes(self, authenticated_client, test_user):
+        """Uses .update(is_deleted=True) — record still exists in DB."""
+        emp = _create_employee(
+            test_user, email="soft@example.com", employment_status="inactive"
+        )
+
+        authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert Employee.objects.filter(id=emp.id).exists()
+
+    def test_delete_unauthenticated_returns_401(self, api_client, test_user):
+        """Unauthenticated DELETE returns 401."""
+        emp = _create_employee(
+            test_user, email="del@example.com", employment_status="inactive"
+        )
+
+        response = api_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    # ── Active employee deletion validation ─────────────────────────────
+
+    def test_cannot_delete_active_employee(self, authenticated_client, test_user):
+        """Active employees (employment_status=active) cannot be deleted."""
+        emp = _create_employee(
+            test_user, email="active@example.com", employment_status="active"
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        emp.refresh_from_db()
+        assert emp.is_deleted is False
+
+    def test_bulk_delete_blocks_if_any_active(self, authenticated_client, test_user):
+        """Bulk delete rejects entire request if any employee is active."""
+        emp_inactive = _create_employee(
+            test_user, email="inactive@example.com", employee_code="EMP-0001",
+            employment_status="inactive",
+        )
+        emp_active = _create_employee(
+            test_user, email="active@example.com", employee_code="EMP-0002",
+            employment_status="active",
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp_inactive.id, emp_active.id]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        emp_inactive.refresh_from_db()
+        emp_active.refresh_from_db()
+        assert emp_inactive.is_deleted is False
+        assert emp_active.is_deleted is False
+
+    def test_active_delete_response_includes_names(self, authenticated_client, test_user):
+        """400 response includes names of active employees blocking deletion."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="jane@example.com", employment_status="active",
+        )
+
+        response = authenticated_client.delete(
+            EMPLOYEE_URL, {"employee_ids": [emp.id]}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "active_employees" in response.data
+        assert "Jane Doe" in response.data["active_employees"]
+
+
+# ── Edit Employee Modal (backend validation) ────────────────────────────
+
+@pytest.mark.django_db
+class TestEditEmployeeModal:
+    """
+    Backend tests supporting the Edit Employee modal acceptance criteria.
+    Frontend-only concerns (modal open/close, inline display) are not
+    tested here — only the API contracts that the modal depends on.
+    """
+
+    def test_detail_returns_all_fields_for_prepopulation(self, authenticated_client, test_user):
+        """GET detail returns every field the edit form needs to pre-populate."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="jane@example.com", employee_code="EMP-0001",
+        )
+
+        response = authenticated_client.get(_employee_detail_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        for field in ("id", "employee_code", "first_name", "last_name",
+                      "email", "employment_status", "created_at"):
+            assert field in response.data, f"Missing field: {field}"
+
+    def test_submit_no_changes_returns_200(self, authenticated_client, test_user):
+        """Submitting with no changes returns success (no false errors)."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="jane@example.com",
+        )
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id),
+            {"first_name": "Jane", "last_name": "Doe", "email": "jane@example.com"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_update_first_name_leaves_other_fields_unchanged(self, authenticated_client, test_user):
+        """Updating first_name only saves the change and leaves all other fields unchanged."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="jane@example.com", employee_code="EMP-0001",
+        )
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "Janet"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.first_name == "Janet"
+        assert emp.last_name == "Doe"
+        assert emp.email == "jane@example.com"
+        assert emp.employee_code == "EMP-0001"
+
+    def test_update_own_email_returns_200(self, authenticated_client, test_user):
+        """Updating email to the employee's own current email returns success."""
+        emp = _create_employee(test_user, email="jane@example.com")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"email": "jane@example.com"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+
+    def test_duplicate_email_returns_structured_error(self, authenticated_client, test_user):
+        """Duplicate email returns a 400 with a detail message the frontend can display inline."""
+        _create_employee(test_user, email="taken@example.com", employee_code="EMP-0001")
+        emp = _create_employee(test_user, email="mine@example.com", employee_code="EMP-0002")
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"email": "taken@example.com"}
+        )
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "detail" in response.data
+
+    def test_successful_update_reflects_new_values_in_response(self, authenticated_client, test_user):
+        """Successful update response contains the updated values (no refetch needed)."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="jane@example.com",
+        )
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id),
+            {"first_name": "Janet", "last_name": "Smith"},
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["first_name"] == "Janet"
+        assert response.data["last_name"] == "Smith"
+        assert response.data["email"] == "jane@example.com"
+
+    def test_employee_code_not_editable(self, authenticated_client, test_user):
+        """employee_code cannot be changed via PATCH — it stays the same."""
+        emp = _create_employee(
+            test_user, email="jane@example.com", employee_code="EMP-0001",
+        )
+
+        response = authenticated_client.patch(
+            _employee_detail_url(emp.id), {"employee_code": "HACKED-9999"}
+        )
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.employee_code == "EMP-0001"
+
+    def test_updated_values_visible_in_list(self, authenticated_client, test_user):
+        """After a successful update, the list endpoint returns the new values."""
+        emp = _create_employee(
+            test_user, first_name="Jane", email="jane@example.com",
+        )
+
+        authenticated_client.patch(
+            _employee_detail_url(emp.id), {"first_name": "Janet"}
+        )
+        response = authenticated_client.get(EMPLOYEE_URL)
+
+        assert response.data["total_records"] == 1
+        assert response.data["records"][0]["first_name"] == "Janet"
