@@ -38,6 +38,9 @@ EMPLOYEE_URL = "/api/employees/"
 def _employee_detail_url(pk):
     return f"/api/employees/{pk}/"
 
+def _employee_restore_url(pk):
+    return f"/api/employees/{pk}/restore/"
+
 def _create_employee(user, first_name="John", last_name="Doe",
                      email="john@example.com", employee_code="EMP-0001",
                      is_deleted=False, employment_status="active"):
@@ -828,3 +831,118 @@ class TestEditEmployeeModal:
 
         assert response.data["total_records"] == 1
         assert response.data["records"][0]["first_name"] == "Janet"
+
+@pytest.mark.django_db
+class TestEmployeeRestore:
+    """POST /api/employees/{id}/restore/"""
+
+    def test_restore_deleted_employee(self, authenticated_client, test_user):
+        """Restoring a soft-deleted employee sets is_deleted=False."""
+        emp = _create_employee(
+            test_user, email="restore@example.com", is_deleted=True,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        emp.refresh_from_db()
+        assert emp.is_deleted is False
+
+    def test_restore_returns_serialized_employee(self, authenticated_client, test_user):
+        """Restore response contains the full serialized employee data."""
+        emp = _create_employee(
+            test_user, first_name="Jane", last_name="Doe",
+            email="restore@example.com", employee_code="EMP-0001",
+            is_deleted=True,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert response.data["first_name"] == "Jane"
+        assert response.data["email"] == "restore@example.com"
+        assert response.data["employee_code"] == "EMP-0001"
+
+    def test_restore_response_excludes_user_and_is_deleted(self, authenticated_client, test_user):
+        """user and is_deleted not present in restore response."""
+        emp = _create_employee(
+            test_user, email="restore@example.com", is_deleted=True,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_200_OK
+        assert "user" not in response.data
+        assert "user_id" not in response.data
+        assert "is_deleted" not in response.data
+
+    def test_cannot_restore_non_deleted_employee(self, authenticated_client, test_user):
+        """Restoring an already-active employee returns 404."""
+        emp = _create_employee(
+            test_user, email="active@example.com", is_deleted=False,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_cannot_restore_other_users_employee(self, authenticated_client, test_user):
+        """Cross-tenant restore returns 404."""
+        other_user = User.objects.create_user(
+            email="other@example.com", password="pass1234",
+            first_name="Other", last_name="User",
+        )
+        emp = _create_employee(
+            other_user, email="theirs@example.com", is_deleted=True,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_restore_nonexistent_employee_returns_404(self, authenticated_client):
+        """Non-existent ID returns 404."""
+        response = authenticated_client.post(_employee_restore_url(99999))
+
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_restore_unauthenticated_returns_401(self, api_client, test_user):
+        """Unauthenticated POST restore returns 401."""
+        emp = _create_employee(
+            test_user, email="restore@example.com", is_deleted=True,
+        )
+
+        response = api_client.post(_employee_restore_url(emp.id))
+
+        assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_restore_with_duplicate_email_returns_400(self, authenticated_client, test_user):
+        """Cannot restore if an active employee already has the same email."""
+        _create_employee(
+            test_user, email="taken@example.com", employee_code="EMP-0001",
+            is_deleted=False,
+        )
+        deleted_emp = _create_employee(
+            test_user, email="taken@example.com", employee_code="EMP-0002",
+            is_deleted=True,
+        )
+
+        response = authenticated_client.post(_employee_restore_url(deleted_emp.id))
+
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        assert "detail" in response.data
+        deleted_emp.refresh_from_db()
+        assert deleted_emp.is_deleted is True
+
+    def test_restored_employee_visible_in_list(self, authenticated_client, test_user):
+        """After restore, the employee appears in the list endpoint."""
+        emp = _create_employee(
+            test_user, first_name="Restored", email="back@example.com",
+            is_deleted=True,
+        )
+
+        authenticated_client.post(_employee_restore_url(emp.id))
+        response = authenticated_client.get(EMPLOYEE_URL)
+
+        assert response.data["total_records"] == 1
+        assert response.data["records"][0]["first_name"] == "Restored"
