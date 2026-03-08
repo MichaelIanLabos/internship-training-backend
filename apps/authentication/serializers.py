@@ -46,23 +46,13 @@ class LoginSerializer(serializers.Serializer):
     3. Return the authenticated user in validated_data
     4. Handle errors: invalid credentials, inactive user
     """
-    # TODO: Define fields here
-    # email = serializers.EmailField()
-    # password = serializers.CharField(...)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
-        """
-        TODO: Implement authentication logic
-        Steps:
-        1. Get email and password from attrs
-        2. Use authenticate() to verify credentials
-        3. Check if user is active
-        4. Add user to attrs['user']
-        5. Return attrs
-
-        Resources:
-        - Django authenticate:
-          https://docs.djangoproject.com/en/5.0/topics/auth/default/
-        """
-        # Your code here
-        pass
+        user = authenticate(email=attrs['email'], password=attrs['password'])
+        if not user:
+            raise serializers.ValidationError('Invalid credentials.')
+        if not user.is_active:
+            raise serializers.ValidationError('User account is disabled.')
+        return user
