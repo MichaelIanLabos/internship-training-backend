@@ -2,11 +2,15 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 
-# These base classes (API, ObjectManager) are expected from your core app
 from apps.core.views import API, ObjectManager
 from .models import Employee
-from .serializers import EmployeeCreateUpdateSerializer, EmployeeTableViewSerializer
+from .serializers import (
+    EmployeeCreateUpdateSerializer,
+    EmployeeTableViewSerializer,
+    EmployeeRetrieveSerializer,
+)
 
 class EmployeeAPIView(API, ObjectManager):
     permission_classes = [IsAuthenticated]
@@ -18,10 +22,9 @@ class EmployeeAPIView(API, ObjectManager):
         email = request.data.get("email")
         user = request.user
 
-        # AC: Email uniqueness check per user_id and non-deleted records
         if Employee.objects.filter(
-            user=user, 
-            email__iexact=email, 
+            user=user,
+            email__iexact=email,
             is_deleted=False
         ).exists():
             return Response(
@@ -29,33 +32,27 @@ class EmployeeAPIView(API, ObjectManager):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # AC: user_id sourced from request.user (passed via context to serializer)
         serializer = EmployeeCreateUpdateSerializer(
-            data=request.data, 
+            data=request.data,
             context={"request": request}
         )
-        
+
         if serializer.is_valid():
-            # AC: employee_code auto-generated inside serializer.save() -> create()
             serializer.save()
-            # AC: user and is_deleted not present in response (handled by Serializer Meta)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
-            
+
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def get(self, request):
         """
         AC: GET /api/employees/ returns only current user's non-deleted employees
         """
-        # AC: Extract pagination params
         current_page = int(request.query_params.get("page", 1))
         page_size = int(request.query_params.get("page_size", 10))
         search_query = request.query_params.get("search", "")
 
-        # AC: Base filter: Current user's records that are not deleted
         queryset = Employee.objects.filter(user=request.user, is_deleted=False)
 
-        # AC: ?search= filters across first_name, last_name, and email using Q
         if search_query:
             queryset = queryset.filter(
                 Q(first_name__icontains=search_query) |
@@ -63,19 +60,95 @@ class EmployeeAPIView(API, ObjectManager):
                 Q(email__icontains=search_query)
             )
 
-        # Sorting by newest first is generally expected for table views
         queryset = queryset.order_index("-created_at") if hasattr(queryset, 'order_index') else queryset.order_by("-created_at")
 
-        # AC: Pagination applied via ObjectManager method
-        # AC: Expected Shape: { total_records, total_pages, current_page, records: [] }
         pagination_data = self.generate_pagination(
             current_page=current_page,
             page_size=page_size,
             records=queryset
         )
 
-        # Serialize the 'records' part of the pagination
         serializer = EmployeeTableViewSerializer(pagination_data["records"], many=True)
         pagination_data["records"] = serializer.data
 
         return Response(pagination_data, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        employee_ids = request.data.get("employee_ids")
+
+        if not employee_ids:
+            return Response(
+                {"detail": "employee_ids is required and cannot be empty."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        employees = Employee.objects.filter(
+            id__in=employee_ids,
+            user=request.user,
+            is_deleted=False,
+        )
+
+        active_employees = employees.filter(employment_status="active")
+        if active_employees.exists():
+            active_names = [
+                f"{emp.first_name} {emp.last_name}" for emp in active_employees
+            ]
+            return Response(
+                {
+                    "detail": "Cannot delete active employees. Change their status before deleting.",
+                    "active_employees": active_names,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        updated = employees.update(is_deleted=True)
+
+        return Response(
+            {"detail": f"{updated} employee(s) deleted successfully."},
+            status=status.HTTP_200_OK,
+        )
+
+
+class EmployeeDetailAPIView(API, ObjectManager):
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, user, pk):
+        return get_object_or_404(Employee, pk=pk, user=user, is_deleted=False)
+
+    def get(self, request, pk):
+        employee = self.get_object(request.user, pk)
+        serializer = EmployeeRetrieveSerializer(employee)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk):
+        employee = self.get_object(request.user, pk)
+
+        new_email = request.data.get("email")
+        if new_email:
+            duplicate = (
+                Employee.objects.filter(
+                    user=request.user,
+                    email__iexact=new_email,
+                    is_deleted=False,
+                )
+                .exclude(id=employee.id)
+                .exists()
+            )
+            if duplicate:
+                return Response(
+                    {"detail": "An active employee with this email already exists for your account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        serializer = EmployeeCreateUpdateSerializer(
+            employee,
+            data=request.data,
+            partial=True,
+            context={"request": request},
+        )
+
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
