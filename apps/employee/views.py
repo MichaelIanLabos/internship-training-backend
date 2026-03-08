@@ -152,3 +152,25 @@ class EmployeeDetailAPIView(API, ObjectManager):
             return Response(serializer.data, status=status.HTTP_200_OK)
 
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class EmployeeRestoreAPIView(API):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk):
+        employee = get_object_or_404(Employee, pk=pk, user=request.user, is_deleted=True)
+
+        if Employee.objects.filter(
+            user=request.user,
+            email__iexact=employee.email,
+            is_deleted=False,
+        ).exists():
+            return Response(
+                {"detail": "An active employee with this email already exists. Cannot restore."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        employee.is_deleted = False
+        employee.save()
+
+        serializer = EmployeeRetrieveSerializer(employee)
+        return Response(serializer.data, status=status.HTTP_200_OK)
