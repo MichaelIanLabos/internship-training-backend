@@ -43,7 +43,7 @@ class RegisterView(APIView):
         "message": "User registered successfully. Please login."
     }
     """
-    permission_classes = []  # TODO: Set to [AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         """
@@ -59,8 +59,16 @@ class RegisterView(APIView):
         - Use UserSerializer to format the response
         - Return status.HTTP_201_CREATED
         """
-        # Your code here
-        pass
+        serializer = RegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'message': 'User registered successfully. Please login.'
+            },
+            status=status.HTTP_201_CREATED
+        )
 
 
 class LoginView(APIView):
@@ -101,7 +109,7 @@ class LoginView(APIView):
     access_token = str(refresh.access_token)
     refresh_token = str(refresh)
     """
-    permission_classes = []  # TODO: Set to [AllowAny]
+    permission_classes = [AllowAny]
 
     def post(self, request):
         """
@@ -115,8 +123,22 @@ class LoginView(APIView):
         Resources:
         - Simple JWT docs: https://django-rest-framework-simplejwt.readthedocs.io/
         """
-        # Your code here
-        pass
+        serializer = LoginSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.validated_data['user']
+        
+        refresh = RefreshToken.for_user(user)
+        
+        return Response(
+            {
+                'user': UserSerializer(user).data,
+                'tokens': {
+                    'access': str(refresh.access_token),
+                    'refresh': str(refresh)
+                }
+            },
+            status=status.HTTP_200_OK
+        )
 
 
 class MeView(APIView):
@@ -146,7 +168,7 @@ class MeView(APIView):
     Note: This endpoint tests if JWT authentication is working!
     The user must send a valid access token in the Authorization header.
     """
-    permission_classes = []  # TODO: Set to [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         """
@@ -158,5 +180,5 @@ class MeView(APIView):
 
         Hint: request.user is automatically populated by JWT authentication
         """
-        # Your code here
-        pass
+        serializer = UserSerializer(request.user)
+        return Response(serializer.data, status=status.HTTP_200_OK)

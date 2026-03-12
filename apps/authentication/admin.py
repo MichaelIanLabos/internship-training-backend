@@ -9,6 +9,7 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ('is_staff', 'is_active', 'date_joined')
     search_fields = ('email', 'first_name', 'last_name')
     ordering = ('-date_joined',)
+    readonly_fields = ('last_login', 'date_joined', 'updated_at')
 
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
@@ -25,7 +26,7 @@ class UserAdmin(BaseUserAdmin):
                 )
             },
         ),
-        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+        ('Important dates', {'fields': ('last_login', 'date_joined', 'updated_at')}),
     )
 
     add_fieldsets = (

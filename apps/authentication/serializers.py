@@ -16,7 +16,7 @@ class UserSerializer(serializers.ModelSerializer):
         model = User
         # TODO: Add fields here
         # Hint: id, email, first_name, last_name, date_joined
-        fields = '__all__'  # REPLACE THIS - be specific about fields
+        fields = ('id', 'email', 'first_name', 'last_name', 'date_joined')
         read_only_fields = ('id', 'date_joined')
 
 
@@ -30,13 +30,12 @@ class RegisterSerializer(serializers.ModelSerializer):
     3. Implement create() method to create user with hashed password
     4. Consider: What validations are needed? Email format? Password strength?
     """
-    # TODO: Add password fields here
-    # password = serializers.CharField(...)
-    # password_confirm = serializers.CharField(...)
+    password = serializers.CharField(write_only=True, min_length=8)
+    password_confirm = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
-        fields = ('email', 'first_name', 'last_name', 'password')  # TODO: Add password_confirm
+        fields = ('email', 'first_name', 'last_name', 'password', 'password_confirm')
 
     def validate(self, attrs):
         """
@@ -44,7 +43,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         Hint: Check if password == password_confirm
         Raise serializers.ValidationError if they don't match
         """
-        # Your code here
+        if attrs['password'] != attrs['password_confirm']:
+            raise serializers.ValidationError(
+                {'password': 'Passwords must match.'}
+            )
         return attrs
 
     def create(self, validated_data):
@@ -55,8 +57,9 @@ class RegisterSerializer(serializers.ModelSerializer):
         - Use User.objects.create_user() to properly hash the password
         - Return the created user
         """
-        # Your code here
-        pass
+        validated_data.pop('password_confirm')
+        user = User.objects.create_user(**validated_data)
+        return user
 
 
 class LoginSerializer(serializers.Serializer):
@@ -69,9 +72,8 @@ class LoginSerializer(serializers.Serializer):
     3. Return the authenticated user in validated_data
     4. Handle errors: invalid credentials, inactive user
     """
-    # TODO: Define fields here
-    # email = serializers.EmailField()
-    # password = serializers.CharField(...)
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
         """
@@ -87,5 +89,20 @@ class LoginSerializer(serializers.Serializer):
         - Django authenticate:
           https://docs.djangoproject.com/en/5.0/topics/auth/default/
         """
-        # Your code here
-        pass
+        email = attrs.get('email')
+        password = attrs.get('password')
+        
+        user = authenticate(username=email, password=password)
+        
+        if not user:
+            raise serializers.ValidationError(
+                {'password': 'Invalid credentials.'}
+            )
+        
+        if not user.is_active:
+            raise serializers.ValidationError(
+                {'user': 'User account is inactive.'}
+            )
+        
+        attrs['user'] = user
+        return attrs
