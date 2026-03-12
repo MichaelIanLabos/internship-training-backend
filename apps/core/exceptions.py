@@ -1,5 +1,5 @@
 from rest_framework.views import exception_handler
-from rest_framework.response import Response
+from rest_framework.response import Response  # noqa: F401
 
 
 def custom_exception_handler(exc, context):
@@ -17,11 +17,15 @@ def custom_exception_handler(exc, context):
         # Handle field errors (validation errors)
         if isinstance(response.data, dict):
             if 'detail' in response.data:
-                custom_response_data['message'] = response.data['detail']
+                custom_response_data['message'] = (
+                    response.data['detail']
+                )
             else:
                 custom_response_data['errors'] = response.data
         elif isinstance(response.data, list):
-            custom_response_data['message'] = response.data[0] if response.data else 'An error occurred'
+            custom_response_data['message'] = (
+                response.data[0] if response.data else 'An error occurred'
+            )
         else:
             custom_response_data['message'] = str(response.data)
 

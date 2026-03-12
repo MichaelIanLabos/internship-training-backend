@@ -9,17 +9,40 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ('is_staff', 'is_active', 'date_joined')
     search_fields = ('email', 'first_name', 'last_name')
     ordering = ('-date_joined',)
+    readonly_fields = ('last_login', 'date_joined', 'updated_at')
 
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
         ('Personal Info', {'fields': ('first_name', 'last_name')}),
-        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
-        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+        (
+            'Permissions',
+            {
+                'fields': (
+                    'is_active',
+                    'is_staff',
+                    'is_superuser',
+                    'groups',
+                    'user_permissions',
+                )
+            },
+        ),
+        ('Important dates', {'fields': ('last_login', 'date_joined', 'updated_at')}),
     )
 
     add_fieldsets = (
-        (None, {
-            'classes': ('wide',),
-            'fields': ('email', 'first_name', 'last_name', 'password1', 'password2', 'is_staff', 'is_active')}
+        (
+            None,
+            {
+                'classes': ('wide',),
+                'fields': (
+                    'email',
+                    'first_name',
+                    'last_name',
+                    'password1',
+                    'password2',
+                    'is_staff',
+                    'is_active',
+                ),
+            },
         ),
     )

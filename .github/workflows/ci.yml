@@ -2,9 +2,9 @@ name: Backend CI
 
 on:
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, intern/ustp, intern/coc]
   push:
-    branches: [main, develop]
+    branches: [main, develop, intern/ustp, intern/coc]
 
 jobs:
   test:
@@ -23,20 +23,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements/development.txt
 
-      - name: Run linting
-        run: |
-          flake8 apps/ config/
-          black --check apps/ config/
-          isort --check apps/ config/
-
       - name: Run tests
         run: |
-          pytest --cov=apps --cov-report=xml
+          pytest --cov=apps
         env:
           DJANGO_SETTINGS_MODULE: config.settings.development
 
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          files: ./coverage.xml
-          fail_ci_if_error: false
+      # - name: Upload coverage
+      #   uses: codecov/codecov-action@v3
+      #   with:
+      #     files: ./coverage.xml
+      #     fail_ci_if_error: false

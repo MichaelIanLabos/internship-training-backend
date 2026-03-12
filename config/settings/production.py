@@ -1,7 +1,7 @@
 """
 Production settings
 """
-from .base import *
+from .base import *  # noqa: F403, F401
 
 DEBUG = False
 
@@ -14,5 +14,7 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
 # Static files (whitenoise)
-MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+MIDDLEWARE.insert(  # noqa: F405
+    1, 'whitenoise.middleware.WhiteNoiseMiddleware'
+)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
