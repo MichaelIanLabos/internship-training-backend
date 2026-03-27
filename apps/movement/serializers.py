@@ -8,9 +8,9 @@ class MovementSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'employee', 'movement_type', 'status', 
             'requested_by', 'approved_by', 'remarks', 
-            'created_at', 'updated_at'
+            'created_at', 'updated_at', 'is_deleted'
         ]
-        read_only_fields = ['status', 'requested_by', 'approved_by', 'created_at', 'updated_at']
+        read_only_fields = ['status', 'requested_by', 'approved_by', 'created_at', 'updated_at', 'is_deleted']
 
     def validate_movement_type(self, value):
         valid_types = ['promotion', 'transfer', 'resignation']
