@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'apps.authentication',
     'apps.core',
     'apps.employee',
+    'apps.movement',
 ]
 
 MIDDLEWARE = [
