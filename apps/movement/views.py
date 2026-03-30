@@ -2,10 +2,31 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from apps.core.views import API
+from .models import EmployeeMovement
 from .serializers import MovementSerializer
 
 class MovementAPIView(API):
     permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = EmployeeMovement.objects.filter(
+            employee__user=request.user,
+            is_deleted=False
+        )
+
+        status_filter = request.query_params.get('status')
+        movement_type_filter = request.query_params.get('movement_type')
+        employee_id_filter = request.query_params.get('employee_id')
+
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if movement_type_filter:
+            queryset = queryset.filter(movement_type=movement_type_filter)
+        if employee_id_filter:
+            queryset = queryset.filter(employee_id=employee_id_filter)
+
+        serializer = MovementSerializer(queryset, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = MovementSerializer(
