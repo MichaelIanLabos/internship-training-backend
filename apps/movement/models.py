@@ -15,29 +15,11 @@ class EmployeeMovement(models.Model):
         ('rejected', 'Rejected'),
     )
 
-    employee = models.ForeignKey(
-        'employee.Employee', 
-        on_delete=models.CASCADE,
-        related_name='movements'
-    )
+    employee = models.ForeignKey('employee.Employee', on_delete=models.CASCADE, related_name='movements')
     movement_type = models.CharField(max_length=20, choices=MOVEMENT_TYPES)
-    status = models.CharField(
-        max_length=20, 
-        choices=STATUS_CHOICES, 
-        default='pending'
-    )
-    requested_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name='requested_movements'
-    )
-    approved_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='approved_movements'
-    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='requested_movements')
+    approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_movements')
     remarks = models.TextField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
