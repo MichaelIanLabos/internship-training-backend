@@ -4,15 +4,13 @@ from rest_framework.permissions import IsAuthenticated
 from apps.core.views import API
 from .models import EmployeeMovement
 from .serializers import MovementSerializer
+from django.shortcuts import get_object_or_404
 
 class MovementAPIView(API):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = EmployeeMovement.objects.filter(
-            employee__user=request.user,
-            is_deleted=False
-        )
+        queryset = EmployeeMovement.objects.filter(employee__user=request.user, is_deleted=False)
 
         status_filter = request.query_params.get('status')
         movement_type_filter = request.query_params.get('movement_type')
@@ -29,14 +27,17 @@ class MovementAPIView(API):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request):
-        serializer = MovementSerializer(
-            data=request.data,
-            context={"request": request}
-        )
+        serializer = MovementSerializer(data=request.data, context={"request": request})
         if serializer.is_valid():
-            serializer.save(
-                status='pending',
-                requested_by=request.user
-            )
+            serializer.save(status='pending', requested_by=request.user)
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class MovementDetailAPIView(API):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk):
+        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        serializer = MovementSerializer(movement)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+        
