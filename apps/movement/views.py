@@ -1,20 +1,25 @@
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from apps.core.views import API
+from django.db.models import Q
+from django.shortcuts import get_object_or_404
+from apps.core.views import API, ObjectManager
 from .models import EmployeeMovement
 from .serializers import MovementSerializer
-from django.shortcuts import get_object_or_404
 
-class MovementAPIView(API):
+
+class MovementAPIView(API, ObjectManager):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        queryset = EmployeeMovement.objects.filter(employee__user=request.user, is_deleted=False)
+        queryset = EmployeeMovement.objects.select_related(
+            'employee', 'requested_by', 'approved_by'
+        ).filter(employee__user=request.user, is_deleted=False)
 
         status_filter = request.query_params.get('status')
         movement_type_filter = request.query_params.get('movement_type')
         employee_id_filter = request.query_params.get('employee_id')
+        search_query = request.query_params.get('search', '')
 
         if status_filter:
             queryset = queryset.filter(status=status_filter)
@@ -22,9 +27,25 @@ class MovementAPIView(API):
             queryset = queryset.filter(movement_type=movement_type_filter)
         if employee_id_filter:
             queryset = queryset.filter(employee_id=employee_id_filter)
+        if search_query:
+            queryset = queryset.filter(
+                Q(employee__first_name__icontains=search_query) |
+                Q(employee__last_name__icontains=search_query)
+            )
 
-        serializer = MovementSerializer(queryset, many=True)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        current_page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('page_size', 10))
+
+        pagination_data = self.generate_pagination(
+            current_page=current_page,
+            page_size=page_size,
+            records=queryset,
+        )
+
+        serializer = MovementSerializer(pagination_data['records'], many=True)
+        pagination_data['records'] = serializer.data
+
+        return Response(pagination_data, status=status.HTTP_200_OK)
 
     def post(self, request):
         serializer = MovementSerializer(data=request.data, context={"request": request})
@@ -37,12 +58,34 @@ class MovementDetailAPIView(API):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, pk):
-        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        movement = get_object_or_404(
+            EmployeeMovement.objects.select_related('employee', 'requested_by', 'approved_by'),
+            pk=pk, employee__user=request.user, is_deleted=False,
+        )
         serializer = MovementSerializer(movement)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
+    def patch(self, request, pk):
+        movement = get_object_or_404(
+            EmployeeMovement.objects.select_related('employee', 'requested_by', 'approved_by'),
+            pk=pk, employee__user=request.user, is_deleted=False,
+        )
+        if movement.status != 'pending':
+            return Response(
+                {"detail": f"Only pending records can be edited. This record is already {movement.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        serializer = MovementSerializer(movement, data=request.data, partial=True, context={"request": request})
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     def delete(self, request, pk):
-        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        movement = get_object_or_404(
+            EmployeeMovement.objects.select_related('employee'),
+            pk=pk, employee__user=request.user, is_deleted=False,
+        )
         
         if movement.status != 'pending':
             return Response(
@@ -58,7 +101,10 @@ class MovementApproveAPIView(API):
 
     def patch(self, request, pk):
         """Approve movement - only if status is pending."""
-        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        movement = get_object_or_404(
+            EmployeeMovement.objects.select_related('employee', 'requested_by', 'approved_by'),
+            pk=pk, employee__user=request.user, is_deleted=False,
+        )
 
         # Enforce state transition rule
         if movement.status != 'pending':
@@ -80,7 +126,10 @@ class MovementRejectAPIView(API):
 
     def patch(self, request, pk):
         """Reject movement - only if status is pending."""
-        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        movement = get_object_or_404(
+            EmployeeMovement.objects.select_related('employee', 'requested_by', 'approved_by'),
+            pk=pk, employee__user=request.user, is_deleted=False,
+        )
 
         # Enforce state transition rule
         if movement.status != 'pending':
@@ -92,6 +141,9 @@ class MovementRejectAPIView(API):
         # Update record
         movement.status = 'rejected'
         movement.approved_by = request.user
+        rejection_remarks = request.data.get('remarks')
+        if rejection_remarks:
+            movement.remarks = rejection_remarks
         movement.save()
 
         serializer = MovementSerializer(movement)
