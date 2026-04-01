@@ -41,3 +41,24 @@ class MovementDetailAPIView(API):
         serializer = MovementSerializer(movement)
         return Response(serializer.data, status=status.HTTP_200_OK)
         
+class MovementApproveAPIView(API):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        """Approve movement - only if status is pending."""
+        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+
+        # Enforce state transition rule
+        if movement.status != 'pending':
+            return Response(
+                {"detail": f"Cannot approve movement. Status is already {movement.status}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Update record
+        movement.status = 'approved'
+        movement.approved_by = request.user
+        movement.save()
+
+        serializer = MovementSerializer(movement)
+        return Response(serializer.data, status=status.HTTP_200_OK)
