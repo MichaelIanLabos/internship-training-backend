@@ -40,6 +40,18 @@ class MovementDetailAPIView(API):
         movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
         serializer = MovementSerializer(movement)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def delete(self, request, pk):
+        movement = get_object_or_404(EmployeeMovement, pk=pk, employee__user=request.user, is_deleted=False)
+        
+        if movement.status != 'pending':
+            return Response(
+                {"detail": f"Only pending records can be deleted. This record is already {movement.status}."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        movement.is_deleted = True
+        movement.save()
+        return Response({"detail": "Movement deleted successfully."}, status=status.HTTP_200_OK)
         
 class MovementApproveAPIView(API):
     permission_classes = [IsAuthenticated]
